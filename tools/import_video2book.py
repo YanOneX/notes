@@ -99,6 +99,8 @@ def import_course(src: Path, vault: Path, course: str, with_subtitles: bool, dry
         for item in sorted(sdir.rglob("*")):
             if item.is_dir():
                 continue
+            if item.name.endswith("_TASK.md") or item.suffix.lower() == ".json":
+                continue  # 派发任务书与中间 JSON 不进笔记库
             rel = item.relative_to(sdir)
             dst = course_dir / dst_sub / rel
             if item.suffix.lower() == ".md":
