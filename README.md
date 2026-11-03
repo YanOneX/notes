@@ -8,7 +8,8 @@
 
 笔记本身可以来自 [video2book](https://github.com/LINJIANG12/video2book) 的产物，也可以完全手写。
 
-> **完整教程见 [GUIDE.md](GUIDE.md)**：以 B 站《黑马程序员 Python+AI》185 集课程为案例，从装 video2book、切知识块、写作、过门禁、导入 Obsidian 到发布上线，逐步带命令。
+> **使用指南 → [GUIDE.md](GUIDE.md)**：怎么用这套笔记学习（网站怎么逛、笔记怎么读、Obsidian 怎么写、怎么让它继续加课）。
+> **技术手册 → [TECHNICAL.md](TECHNICAL.md)**：背后是怎么跑的（切块规则、质量门禁、部署流程、排查表）。
 
 ## 目录结构
 
