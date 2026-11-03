@@ -1,0 +1,61 @@
+name: Deploy notes to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # full history so "最近更新" / 修改时间能读到真实 git 提交时间
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # 注意：Pages 必须先手动开一次（Settings → Pages → Source 选 "GitHub Actions"）。
+      # workflow 里的 GITHUB_TOKEN 没有建 Pages 站点的权限，加 configure-pages
+      # 的 enablement 只会让构建在这里失败，所以不自动化这一步。
+
+      - name: Build site
+        # 用 node 直接跑入口：Windows 上提交的文件没有可执行位，
+        # node_modules/.bin/quartz 在 Linux runner 上会报 Permission denied。
+        run: node quartz/bootstrap-cli.mjs build
+        # baseUrl 由 quartz.config.ts 按 GITHUB_REPOSITORY 自动推算；
+        # 绑了自定义域名就取消下面一行的注释并改成你的域名
+        # env:
+        #   QUARTZ_BASE_URL: notes.example.com
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

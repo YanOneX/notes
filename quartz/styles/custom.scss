@@ -1,0 +1,41 @@
+@use "./base.scss";
+
+// ===========================================================
+// 中文排版覆盖
+// 即使 Google Fonts 被墙 / 加载失败，也会退回系统自带中文字体
+// ===========================================================
+
+:root {
+  --headerFont:
+    "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB",
+    "Source Han Sans SC", "WenQuanYi Micro Hei", system-ui, -apple-system, sans-serif;
+  --bodyFont:
+    "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB",
+    "Source Han Sans SC", "WenQuanYi Micro Hei", system-ui, -apple-system, sans-serif;
+}
+
+// 中英混排时，中文行高需要略大一些才不挤
+p,
+li {
+  line-height: 1.75;
+}
+
+// 表格在窄屏可横向滚动，别把中文挤成竖排
+article table {
+  display: block;
+  overflow-x: auto;
+  width: fit-content;
+  max-width: 100%;
+  border-collapse: collapse;
+}
+
+// 行内代码里的中文不要被等宽字体的西文间距撑开
+code {
+  word-break: break-word;
+}
+
+// mermaid 图在暗色模式下背景透明，避免出现白底方块
+pre:has(> code.mermaid) {
+  background: transparent;
+  padding: 0;
+}
