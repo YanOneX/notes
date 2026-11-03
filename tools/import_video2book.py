@@ -158,6 +158,16 @@ def _split_sections(body: str) -> list[tuple[str, str]]:
     return out
 
 
+def _dedent_bullets(body: str) -> str:
+    """笔记里的条目用 4 空格缩进模拟层级，Quartz 会把整段渲染成 <pre>；导入时压平缩进。"""
+    out = []
+    for ln in body.splitlines():
+        while ln.startswith("    "):
+            ln = ln[4:]
+        out.append(ln)
+    return "\n".join(out)
+
+
 def import_course_chapter(src: Path, vault: Path, course: str, with_subtitles: bool, dry: bool) -> list[Path]:
     """章节布局：一章一个文件夹，内含按知识点编号的笔记与 精读长文/ 子目录。"""
     course_dir = vault / "课程" / course
@@ -231,7 +241,10 @@ def import_course_chapter(src: Path, vault: Path, course: str, with_subtitles: b
                 dst = course_dir / folder[note["note_id"]] / f"{i:02d}-{title.replace(' ', '')}.md"
                 if not dry:
                     dst.parent.mkdir(parents=True, exist_ok=True)
-                    dst.write_text(emit_frontmatter(meta) + f"# {title}\n\n" + content + "\n", encoding="utf-8")
+                    dst.write_text(
+                        emit_frontmatter(meta) + f"# {title}\n\n" + _dedent_bullets(content) + "\n",
+                        encoding="utf-8",
+                    )
                 written.append(dst)
 
     # 其它子目录（教材/逐字稿）保持课程级扁平结构
