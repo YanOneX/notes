@@ -133,9 +133,13 @@ def import_course(src: Path, vault: Path, course: str, with_subtitles: bool, dry
 
 
 def _short_title(title: str, limit: int = 20) -> str:
-    """章节/知识点短名：冒号前、去空格与非法文件名字符。"""
+    """章节/知识点短名：冒号前、去空格与非法文件名字符，并清掉截断留下的残句。"""
     s = re.split(r"[：:]", title, maxsplit=1)[0].strip()
+    # 少数字段会被上游截断成「if进阶(if」「语法」这类残句，先去掉没闭合的括号段
+    s = re.sub(r"[（(][^）)]*[）)]", "", s)
+    s = re.sub(r"[（(][^）)]*$", "", s)
     s = re.sub(r'[\\/:*?"<>|\s]+', "", s)
+    s = s.strip("-—·、,，.。;；+")
     return (s or "未命名")[:limit]
 
 
