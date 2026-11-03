@@ -132,6 +132,127 @@ def import_course(src: Path, vault: Path, course: str, with_subtitles: bool, dry
     return written
 
 
+def _short_title(title: str, limit: int = 20) -> str:
+    """章节/知识点短名：冒号前、去空格与非法文件名字符。"""
+    s = re.split(r"[：:]", title, maxsplit=1)[0].strip()
+    s = re.sub(r'[\\/:*?"<>|\s]+', "", s)
+    return (s or "未命名")[:limit]
+
+
+def _split_sections(body: str) -> list[tuple[str, str]]:
+    """把一篇笔记按 `## ` 切成知识点小节。"""
+    out: list[tuple[str, str]] = []
+    name: str | None = None
+    buf: list[str] = []
+    for ln in body.splitlines():
+        if ln.startswith("## "):
+            if name is not None:
+                out.append((name, "\n".join(buf).strip("\n")))
+            name, buf = ln[3:].strip(), []
+        elif ln.startswith("# "):
+            continue
+        else:
+            buf.append(ln)
+    if name is not None:
+        out.append((name, "\n".join(buf).strip("\n")))
+    return out
+
+
+def import_course_chapter(src: Path, vault: Path, course: str, with_subtitles: bool, dry: bool) -> list[Path]:
+    """章节布局：一章一个文件夹，内含按知识点编号的笔记与 精读长文/ 子目录。"""
+    course_dir = vault / "课程" / course
+    plan = json.loads((src / "note_plan.json").read_text(encoding="utf-8"))
+    block_topic: dict[int, str] = {}
+    bp_file = src / "block_plan.json"
+    if bp_file.is_file():
+        bp = json.loads(bp_file.read_text(encoding="utf-8"))
+        for b in bp["blocks"] if isinstance(bp, dict) else bp:
+            title = re.sub(r"^\d+\.\s*", "", str(b.get("title", "")))
+            block_topic[int(b["block_id"])] = title.split("-")[-1]
+    folder = {n["note_id"]: f"{n['note_id']:02d}-{_short_title(n['note_title'])}" for n in plan}
+    # note_plan.json 里可选的 topics: {"块号": "短名"}，优先于从块标题裁出来的名字
+    topic_override: dict[int, str] = {}
+    for n in plan:
+        for k, v in (n.get("topics") or {}).items():
+            topic_override[int(k)] = str(v)
+    block2note = {b: n["note_id"] for n in plan for b in n["blocks"]}
+    written: list[Path] = []
+
+    # 精读长文 → <章>/精读长文/NN-<短名>.md
+    art_dir = src / "articles"
+    if art_dir.is_dir():
+        counter: dict[int, int] = {}
+        for f in sorted(art_dir.glob("*.md")):
+            if f.name.endswith("_TASK.md"):
+                continue
+            m = re.match(r"模块(\d+)_", f.name)
+            if not m or int(m.group(1)) not in block2note:
+                continue
+            nid = block2note[int(m.group(1))]
+            counter[nid] = counter.get(nid, 0) + 1
+            text = f.read_text(encoding="utf-8", errors="replace")
+            meta, body = split_frontmatter(text)
+            h1 = H1.search(body)
+            title = meta.get("title") if isinstance(meta.get("title"), str) else None
+            title = title or (h1.group(1).strip() if h1 else strip_md_ext(f.name))
+            tags = meta.get("tags") if isinstance(meta.get("tags"), list) else []
+            for t in (course, "精读长文", _short_title(next(n["note_title"] for n in plan if n["note_id"] == nid))):
+                if t not in tags:
+                    tags.append(t)
+            meta["title"] = title
+            meta["tags"] = tags
+            meta.setdefault("date", datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d"))
+            dst = course_dir / folder[nid] / "精读长文" / f"{counter[nid]:02d}-{_short_title(topic_override.get(int(m.group(1)), block_topic.get(int(m.group(1)), title)))}.md"
+            if not dry:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                dst.write_text(emit_frontmatter(meta) + body.lstrip("\n"), encoding="utf-8")
+            written.append(dst)
+
+    # 复习笔记 → <章>/NN-<知识点>.md（按 ## 拆篇）
+    note_dir = src / "notes"
+    if note_dir.is_dir():
+        for f in sorted(note_dir.glob("*.md")):
+            if f.name.endswith("_TASK.md"):
+                continue
+            m = re.match(r"笔记(\d+)_", f.name)
+            if not m:
+                continue
+            note = next((n for n in plan if n["note_id"] == int(m.group(1))), None)
+            if not note:
+                continue
+            _, body = split_frontmatter(f.read_text(encoding="utf-8", errors="replace"))
+            for i, (name, content) in enumerate(_split_sections(body), 1):
+                title = name.strip()
+                meta = {
+                    "title": title,
+                    "tags": [course, "复习笔记", _short_title(note["note_title"])],
+                    "date": datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d"),
+                }
+                dst = course_dir / folder[note["note_id"]] / f"{i:02d}-{title.replace(' ', '')}.md"
+                if not dry:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    dst.write_text(emit_frontmatter(meta) + f"# {title}\n\n" + content + "\n", encoding="utf-8")
+                written.append(dst)
+
+    # 其它子目录（教材/逐字稿）保持课程级扁平结构
+    for src_sub, (dst_sub, tag) in TYPE_MAP.items():
+        if src_sub in ("articles", "notes"):
+            continue
+        sdir = src / src_sub
+        if not sdir.is_dir() or (src_sub == "subtitles" and not with_subtitles):
+            continue
+        for item in sorted(sdir.rglob("*")):
+            if item.is_dir() or item.name.endswith("_TASK.md") or item.suffix.lower() == ".json":
+                continue
+            dst = course_dir / dst_sub / item.relative_to(sdir)
+            if not dry:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(item, dst)
+            written.append(dst)
+
+    return written
+
+
 def rebuild_course_index(vault: Path, course: str, dry: bool) -> None:
     course_dir = vault / "课程" / course
     index = course_dir / "index.md"
@@ -209,6 +330,7 @@ def main() -> int:
     ap.add_argument("--vault", default="content", help="Quartz content 目录，默认 content")
     ap.add_argument("--with-subtitles", action="store_true", help="连逐字稿一起导入（体积很大，默认不导）")
     ap.add_argument("--dry-run", action="store_true", help="只打印计划，不写文件")
+    ap.add_argument("--flat", action="store_true", help="用旧的扁平布局（不按章节文件夹拆分）")
     args = ap.parse_args()
 
     src = Path(args.src).expanduser().resolve()
@@ -231,8 +353,14 @@ def main() -> int:
     print(f"输出到 : {vault / '课程' / course}")
     print(f"子目录 : {', '.join(subs)}" + ("" if args.with_subtitles else "（逐字稿跳过）"))
 
-    written = import_course(src, vault, course, args.with_subtitles, args.dry_run)
-    rebuild_course_index(vault, course, args.dry_run)
+    chapter_layout = (src / "note_plan.json").is_file() and not args.flat
+    if chapter_layout:
+        print("布局   : 章节文件夹（一章一夹 + 按知识点拆篇）")
+        written = import_course_chapter(src, vault, course, args.with_subtitles, args.dry_run)
+    else:
+        print("布局   : 扁平（articles/notes/textbooks 三大目录）")
+        written = import_course(src, vault, course, args.with_subtitles, args.dry_run)
+        rebuild_course_index(vault, course, args.dry_run)
     rebuild_root_index(vault, args.dry_run)
 
     md = sum(1 for p in written if p.suffix.lower() == ".md")

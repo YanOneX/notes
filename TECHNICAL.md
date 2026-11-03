@@ -426,24 +426,41 @@ python tools/import_video2book.py --src $src --course "Python+AI"
 
 | video2book 产物 | 站点位置 |
 | --- | --- |
-| `articles/*.md` | `content/课程/Python+AI/` |
-| `textbooks/*.md` | `content/课程/Python+AI/整编教材/` |
-| `notes/*.md` | `content/课程/Python+AI/复习笔记/` |
+| `articles/*.md` | `content/课程/<课程>/<章号>-<章名>/精读长文/NN-<块主题>.md` |
+| `textbooks/*.md` | `content/课程/<课程>/整编教材/` |
+| `notes/*.md` | 按 `##` 拆成 `content/课程/<课程>/<章号>-<章名>/NN-<知识点>.md` |
 | `subtitles/*.md` | 默认**不导**（加 `--with-subtitles` 才导到 `逐字稿/`） |
+
+**章从哪来**：`--src` 下若存在 `note_plan.json`，脚本走「章节布局」。`note_plan.json` 里的每条 `{"note_id","note_title","blocks","core_theme"}` 就是一「章」——文件夹名取 `note_id` 两位编号 + 标题冒号前的部分（`数据存储与运算：变量…` → `02-数据存储与运算`）。想让长文文件名更准，可在该条里加可选的 `topics`：
+
+```json
+{"note_id": 2, "note_title": "数据存储与运算：变量、类型与字符串格式化",
+ "blocks": [4,5,6,7], "topics": {"7": "运算符"}}
+```
+
+没有 `note_plan.json`（或加 `--flat`）时退回旧的扁平布局：长文直接躺课程目录、笔记躺 `复习笔记/`。
 
 导入后目录长这样：
 
 ```text
-content/课程/Python+AI/
-├── index.md                    课程总览（自动生成）
-├── 模块01_…_精读长文.md
-├── 模块02_…_精读长文.md
-├── …（71 篇）
-├── 整编教材/
-│   └── 模块1_…_精读全书.md
-└── 复习笔记/
-    └── 笔记01_…_笔记.md
+content/课程/Python/
+├── index.md                        课程总览（手写，含章节地图）
+└── 02-数据存储与运算/               一章一个文件夹
+    ├── index.md                    本章导读（知识点顺序表 + 检查点）
+    ├── 01-变量.md                   知识点笔记，编号即阅读顺序
+    ├── 02-数据类型.md
+    ├── …
+    └── 精读长文/
+        ├── 01-变量.md
+        └── …（每块一篇）
 ```
+
+命名规则（脚本强制，别手改）：
+
+- 章文件夹 = `NN-<章名>`，`NN` 取自 `note_id`；
+- 章内笔记 = `NN-<知识点>.md`，`NN` 是该篇在本章中的顺序，来源是笔记里的 `##` 小节；
+- 深读长文 = `NN-<块主题>.md`，`NN` 是该块在本章中的顺序，主题优先取 `topics` 覆盖值，否则取 `block_plan.json` 里块标题的最后一节。
+
 
 > **为什么不导逐字稿**：71 个块的逐字稿动辄几十 MB，仓库会变得很重，而且网页上没人会读。真要备份，就单独放一个私有仓库或网盘。
 
